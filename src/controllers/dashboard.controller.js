@@ -137,3 +137,22 @@ exports.getLowStockProducts = async (req, res) => {
             .json({ success: false, message: "Failed to fetch low stock product" });
     }
 }
+
+exports.getLowStockRawMaterial = async (req, res) => {
+    try {
+        const [rows] = await pool.query(
+            `SELECT m.material_id, m.material_name, m.minimum_stock, minv.current_stock
+            FROM raw_material m
+            LEFT JOIN raw_material_inventory minv ON minv.material_id = m.material_id
+            WHERE minv.current_stock < m.minimum_stock`
+        );
+
+        if (rows.length == 0) {
+            return res.status(404).json({ success: false, message: "No low stock raw material" })
+        }
+
+        return res.json({ success: true, data: rows })
+    } catch (err) {
+        res.status(500).json({ success: false, message: "Failed to fetch low stock raw material" })
+    }
+}
