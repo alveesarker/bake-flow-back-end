@@ -156,3 +156,37 @@ exports.getLowStockRawMaterial = async (req, res) => {
         res.status(500).json({ success: false, message: "Failed to fetch low stock raw material" })
     }
 }
+
+exports.getTopSellingProducts = async (req, res) => {
+    try{
+        const [rows] = await pool.query(
+            `SELECT
+            p.product_id,
+            p.product_name,
+            pc.category_name,
+            SUM(dsi.quantity) AS total_sold
+            FROM distributor_sale ds
+            JOIN distributor_sale_item dsi
+                ON ds.sale_id = dsi.sale_id
+            JOIN product p
+                ON dsi.product_id = p.product_id
+            LEFT JOIN product_category pc
+                ON p.category_id = pc.category_id
+            GROUP BY
+                p.product_id,
+                p.product_name,
+                pc.category_name
+            ORDER BY total_sold DESC
+            LIMIT 6;`
+        );
+
+        if (rows.length == 0){
+            return res.status(404).json({success:false, message:"No top selling products"})
+        }
+
+        return res.json({success: true, data: rows})
+
+    } catch(err) {
+        return res.status(500).json({success:false, message: "Failed to fetch top selling products"});
+    }
+}
