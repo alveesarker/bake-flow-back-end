@@ -38,13 +38,63 @@ const EDITABLE_FIELDS = [
   "status",
 ];
 
+// Loads product_recipe rows (joined with raw_material for name/unit) for the
+// given set of product ids and attaches them to each product as `recipe`.
+// Used by getAllProducts / getProductById / createProduct / updateProduct so
+// every response the frontend sees already carries the BOM it needs to
+// pre-fill the edit dialog.
+async function attachRecipes(products) {
+  if (products.length === 0) return products;
+
+  const ids = products.map((p) => p.product_id);
+  const [recipeRows] = await pool.query(
+    `SELECT pr.recipe_id, pr.product_id, pr.material_id, pr.quantity, rm.material_name, rm.unit
+     FROM product_recipe pr
+     JOIN raw_material rm ON rm.material_id = pr.material_id
+     WHERE pr.product_id IN (?)`,
+    [ids]
+  );
+
+  const grouped = {};
+  recipeRows.forEach((r) => {
+    if (!grouped[r.product_id]) grouped[r.product_id] = [];
+    grouped[r.product_id].push({
+      recipe_id: r.recipe_id,
+      material_id: r.material_id,
+      quantity: r.quantity,
+      material_name: r.material_name,
+      unit: r.unit,
+    });
+  });
+
+  return products.map((p) => ({ ...p, recipe: grouped[p.product_id] || [] }));
+}
+
+// Replaces all product_recipe rows for a product with the given list.
+// Pass an empty array to clear the recipe entirely. Runs on the connection
+// passed in so it stays inside the caller's transaction.
+async function saveRecipe(connection, productId, recipe) {
+  await connection.query("DELETE FROM product_recipe WHERE product_id = ?", [productId]);
+
+  if (!Array.isArray(recipe) || recipe.length === 0) return;
+
+  for (const item of recipe) {
+    if (!item.material_id || !item.quantity || item.quantity <= 0) continue;
+    await connection.query(
+      `INSERT INTO product_recipe (product_id, material_id, quantity) VALUES (?, ?, ?)`,
+      [productId, item.material_id, item.quantity]
+    );
+  }
+}
+
 // GET /api/products
-// Returns every product together with its category name and current stock
-// quantity (joined from product_category and product_inventory).
+// Returns every product together with its category name, current stock
+// quantity, and its raw-material recipe (BOM).
 exports.getAllProducts = async (req, res, next) => {
   try {
     const [rows] = await pool.query(`${BASE_QUERY} ORDER BY p.product_id DESC`);
-    res.json({ success: true, count: rows.length, data: rows });
+    const withRecipes = await attachRecipes(rows);
+    res.json({ success: true, count: withRecipes.length, data: withRecipes });
   } catch (err) {
     next(err);
   }
@@ -59,7 +109,9 @@ exports.getProductById = async (req, res, next) => {
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: `Product ${id} not found` });
     }
-    res.json({ success: true, data: rows[0] });
+
+    const [withRecipe] = await attachRecipes(rows);
+    res.json({ success: true, data: withRecipe });
   } catch (err) {
     next(err);
   }
@@ -67,7 +119,9 @@ exports.getProductById = async (req, res, next) => {
 
 // POST /api/products
 // Creates the product row and its matching product_inventory row in one
-// transaction, so a product never exists without a stock record.
+// transaction, so a product never exists without a stock record. If a
+// `recipe` array is included in the body ([{ material_id, quantity }, ...]),
+// it's saved to product_recipe in the same transaction.
 exports.createProduct = async (req, res, next) => {
   const {
     product_name,
@@ -81,6 +135,7 @@ exports.createProduct = async (req, res, next) => {
     minimum_stock,
     status,
     stock_quantity,
+    recipe,
   } = req.body;
 
   if (!product_name || !category_id || customer_price == null || distributor_price == null || !unit) {
@@ -119,10 +174,15 @@ exports.createProduct = async (req, res, next) => {
       [productId, stock_quantity ?? 0]
     );
 
+    if (Array.isArray(recipe) && recipe.length > 0) {
+      await saveRecipe(connection, productId, recipe);
+    }
+
     await connection.commit();
 
     const [rows] = await pool.query(`${BASE_QUERY} WHERE p.product_id = ?`, [productId]);
-    res.status(201).json({ success: true, data: rows[0] });
+    const [withRecipe] = await attachRecipes(rows);
+    res.status(201).json({ success: true, data: withRecipe });
   } catch (err) {
     await connection.rollback();
     next(err);
@@ -133,8 +193,10 @@ exports.createProduct = async (req, res, next) => {
 
 // PUT /api/products/:id
 // Lets the client edit any product column. If `stock_quantity` is included
-// in the body, product_inventory is upserted too, so one request can update
-// both the product's own fields and its stock level.
+// in the body, product_inventory is upserted too. If `recipe` is included
+// (even as an empty array, to clear it), product_recipe is fully replaced
+// with the given list — so one request can update the product's own fields,
+// its stock level, and its raw-material BOM together.
 exports.updateProduct = async (req, res, next) => {
   const { id } = req.params;
 
@@ -147,7 +209,10 @@ exports.updateProduct = async (req, res, next) => {
     }
   });
 
-  if (updates.length === 0 && req.body.stock_quantity === undefined) {
+  const hasStockUpdate = req.body.stock_quantity !== undefined;
+  const hasRecipeUpdate = req.body.recipe !== undefined;
+
+  if (updates.length === 0 && !hasStockUpdate && !hasRecipeUpdate) {
     return res.status(400).json({ success: false, message: "No editable fields were provided" });
   }
 
@@ -165,7 +230,7 @@ exports.updateProduct = async (req, res, next) => {
       await connection.query(`UPDATE product SET ${updates.join(", ")} WHERE product_id = ?`, values);
     }
 
-    if (req.body.stock_quantity !== undefined) {
+    if (hasStockUpdate) {
       await connection.query(
         `INSERT INTO product_inventory (product_id, stock_quantity)
          VALUES (?, ?)
@@ -174,10 +239,15 @@ exports.updateProduct = async (req, res, next) => {
       );
     }
 
+    if (hasRecipeUpdate) {
+      await saveRecipe(connection, id, req.body.recipe);
+    }
+
     await connection.commit();
 
     const [rows] = await pool.query(`${BASE_QUERY} WHERE p.product_id = ?`, [id]);
-    res.json({ success: true, data: rows[0] });
+    const [withRecipe] = await attachRecipes(rows);
+    res.json({ success: true, data: withRecipe });
   } catch (err) {
     await connection.rollback();
     next(err);
@@ -187,9 +257,10 @@ exports.updateProduct = async (req, res, next) => {
 };
 
 // DELETE /api/products/:id
-// Deletes the product_inventory row first, then the product row, inside a
-// single transaction — so a product is never left with an orphaned or a
-// deleted inventory row is never left without a rolled-back product delete.
+// Deletes product_recipe rows, then the product_inventory row, then the
+// product row, all inside a single transaction — so a product is never left
+// with an orphaned recipe/inventory row, and nothing is left half-deleted if
+// any step fails.
 exports.deleteProduct = async (req, res, next) => {
   const { id } = req.params;
   const connection = await pool.getConnection();
@@ -201,6 +272,7 @@ exports.deleteProduct = async (req, res, next) => {
 
     await connection.beginTransaction();
 
+    await connection.query("DELETE FROM product_recipe WHERE product_id = ?", [id]);
     await connection.query("DELETE FROM product_inventory WHERE product_id = ?", [id]);
     await connection.query("DELETE FROM product WHERE product_id = ?", [id]);
 
@@ -208,7 +280,7 @@ exports.deleteProduct = async (req, res, next) => {
 
     res.json({
       success: true,
-      message: `Product ${id} and its product_inventory record were deleted`,
+      message: `Product ${id} and its product_inventory/product_recipe records were deleted`,
     });
   } catch (err) {
     await connection.rollback();
@@ -217,7 +289,7 @@ exports.deleteProduct = async (req, res, next) => {
       return res.status(409).json({
         success: false,
         message:
-          "This product can't be deleted because it's still referenced elsewhere (recipes, sales, or production records). Remove those first.",
+          "This product can't be deleted because it's still referenced elsewhere (sales or production records). Remove those first.",
       });
     }
     next(err);

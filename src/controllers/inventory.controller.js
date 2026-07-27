@@ -24,6 +24,40 @@ exports.getAllRawMaterials = async (req, res) => {
   }
 };
 
+
+exports.getAllRawMaterialstName = async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT rm.material_id,
+              rm.material_name,
+              rm.unit
+       FROM raw_material rm
+       ORDER BY rm.material_name ASC`
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.log("Hello alvee");
+    console.error("getAllRawMaterials error:", err);
+    res.status(500).json({ success: false, message: "Failed to fetch raw materials" });
+  }
+};
+
+exports.getInventoryStock = async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT rm.material_id,
+              rm.material_name,
+              rm.unit,
+              rmi.current_stock
+       FROM raw_material rm
+       LEFT JOIN raw_material_inventory rmi ON rmi.material_id = rm.material_id`
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error("getAllRawMaterials error:", err);
+    res.status(500).json({ success: false, message: "Failed to fetch raw materials" });
+  }
+};
 // ---------------------------------------------------------------------------
 // GET /api/raw-materials/:id
 // ---------------------------------------------------------------------------
