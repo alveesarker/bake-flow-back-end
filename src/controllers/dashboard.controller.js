@@ -115,3 +115,25 @@ exports.getMonthlySales = async (req, res) => {
             .json({ success: false, message: "Failed to fetch monthly sales" });
     }
 };
+
+
+exports.getLowStockProducts = async (req, res) => {
+    try {
+        const [rows] = await pool.query(
+            `SELECT p.product_id, p.product_name, p.minimum_stock, pinv.stock_quantity
+            FROM product p
+            LEFT JOIN product_inventory pinv ON pinv.product_id = p.product_id
+            WHERE p.minimum_stock > pinv.stock_quantity`
+        );
+
+        if (rows.length == 0) {
+            return res.status(404).json({ success: false, message: "No low stock product" })
+        }
+
+        return res.json({ success: true, data: rows });
+    } catch (err) {
+        res
+            .status(500)
+            .json({ success: false, message: "Failed to fetch low stock product" });
+    }
+}
