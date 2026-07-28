@@ -7,6 +7,7 @@ const dashboardRoutes = require("./dashboard.routes");
 const distributorRoutes = require("./distributor.routes");
 const distributorOrderRoutes = require("./distributor_order.routes");
 const customerSaleRoutes = require("./customer_sale.routes");
+const expenseRoutes = require("./expense.routes");
 
 // Additional resources (raw materials, production, sales, employees, ...)
 // can be added the same way as this project grows:
@@ -20,5 +21,6 @@ router.use("/dashboard", dashboardRoutes);
 router.use("/distributor", distributorRoutes);
 router.use("/distributor-order", distributorOrderRoutes);
 router.use("/customer-sale", customerSaleRoutes);
+router.use("/expenses", expenseRoutes);
 
 module.exports = router;
