@@ -53,11 +53,13 @@ exports.saveOrder = async (req, res, next) => {
             item.quantity * item.unit_price,
         ]);
 
+        console.log(values);
+
         await connection.query(
             `INSERT INTO distributor_sale_item
             (sale_id, product_id, quantity, unit_price, subtotal)
             VALUES ?`,
-            values,
+            [values],
         );
 
         for (const item of sale_items) {
