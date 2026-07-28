@@ -228,6 +228,17 @@ exports.purchaseRawMaterials = async (req, res) => {
     );
     const purchaseId = purchaseResult.insertId;
 
+    // Fetch material names for the expense description
+    const materialIds = items.map((item) => item.materialId);
+    const [materials] = await conn.query(
+      `SELECT material_id, material_name FROM raw_material WHERE material_id IN (?)`,
+      [materialIds]
+    );
+    const materialNameMap = {};
+    materials.forEach((m) => {
+      materialNameMap[m.material_id] = m.material_name;
+    });
+
     for (const item of items) {
       const subtotal = Number(item.quantity) * Number(item.unitPrice);
 
@@ -244,6 +255,21 @@ exports.purchaseRawMaterials = async (req, res) => {
         [item.materialId, item.quantity]
       );
     }
+
+    // Build the expense description: "MaterialName x2 @ $5.00, MaterialName2 x1 @ $3.50, ..."
+    const description = items
+      .map((item) => {
+        const name = materialNameMap[item.materialId] || `Material #${item.materialId}`;
+        return `${name} x${item.quantity} @ ${Number(item.unitPrice).toFixed(2)}`;
+      })
+      .join(", ");
+
+    // Record the corresponding expense (category_id 13 = Raw Materials)
+    await conn.query(
+      `INSERT INTO expense (category_id, amount, expense_date, description, employee_id)
+       VALUES (?, ?, ?, ?, ?)`,
+      [13, totalCost, purchaseDate || new Date(), description, req.body.employeeId || null]
+    );
 
     await conn.commit();
     res.status(201).json({
