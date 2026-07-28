@@ -25,6 +25,19 @@ const BASE_QUERY = `
   LEFT JOIN product_inventory pi ON p.product_id = pi.product_id
 `;
 
+const BASE_QUERY2 = `
+  SELECT
+    p.product_id,
+    p.product_name,
+    p.product_code,
+    pc.category_name,
+    p.distributor_price,
+    COALESCE(pi.stock_quantity, 0) AS stock_quantity
+  FROM product p
+  LEFT JOIN product_category pc ON p.category_id = pc.category_id
+  LEFT JOIN product_inventory pi ON p.product_id = pi.product_id
+`;
+
 const EDITABLE_FIELDS = [
   "product_name",
   "product_code",
@@ -99,6 +112,17 @@ exports.getAllProducts = async (req, res, next) => {
     next(err);
   }
 };
+
+
+exports.getAllProductsForDistributor = async (req, res, next) => {
+  try {
+    const [rows] = await pool.query(`${BASE_QUERY2} ORDER BY p.product_id DESC`);
+    res.json({ success: true, count: rows.length, data: rows });
+  } catch (err) {
+    next(err);
+  }
+};
+
 
 // GET /api/products/:id
 exports.getProductById = async (req, res, next) => {
