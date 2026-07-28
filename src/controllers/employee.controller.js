@@ -20,7 +20,7 @@ exports.getEmployeeName = async (req, res) => {
 exports.getAllEmployees = async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT * FROM employee ORDER BY employee_id ASC'
+      'SELECT * FROM employee ORDER BY name ASC'
     );
     res.status(200).json(rows);
   } catch (err) {
