@@ -6,5 +6,6 @@ const distributorController = require("../controllers/distributor.controller");
 router.get("/", distributorController.getAllDistributor)
 router.get("/distributor-name", distributorController.getDistributorsName);
 router.get("/:id", distributorController.getDistributorById);
+router.put("/:id", distributorController.editDistributor);
 
 module.exports = router;

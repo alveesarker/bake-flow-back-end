@@ -57,3 +57,51 @@ exports.getDistributorById = async (req, res, next) => {
         next(err)
     }
 }
+
+
+exports.editDistributor = async (req, res, next) => {
+    try {
+
+        const { id } = req.params;
+
+        const {
+            name,
+            phone,
+            email,
+            address,
+            status
+        } = req.body;
+
+        const [existing] = await pool.query(
+            `SELECT * FROM distributor WHERE distributor_id = ?`, [id]
+        );
+
+        if (existing.length == 0) {
+            return res.status(404).json({ success: false, message: `ID ${id} is not founnd` })
+        }
+
+        await pool.query(
+            `UPDATE distributor SET
+        name = ?,
+        phone = ?,
+        email = ?,
+        address = ?,
+        status = ?
+        WHERE distributor_id = ?`,
+            [name, phone, email, address, status, id]
+        );
+
+
+        const [update] = await pool.query(
+            `SELECT * FROM distributor WHERE distributor_id = ?`,
+            [id]
+        );
+
+        res.status(200).json({ success: true, message: "Successfully Updated", data: update[0] })
+
+
+    } catch (err) {
+        next(err)
+    }
+
+}
