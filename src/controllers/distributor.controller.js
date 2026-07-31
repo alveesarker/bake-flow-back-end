@@ -18,6 +18,25 @@ exports.getDistributorsName = async (req, res, next) => {
     }
 }
 
+
+exports.getAllDistributor = async (req, res, next) => {
+    try {
+        const [rows] = await pool.query(
+            `SELECT *
+        FROM distributor`,
+        );
+
+        if (rows.length == 0) {
+            return res.status(404).json({ success: false, message: `no distributors` });
+        }
+
+        return res.status(200).json({ success: true, data: rows });
+    } catch (err) {
+        next(err)
+    }
+}
+
+
 exports.getDistributorById = async (req, res, next) => {
     try {
         const { id } = req.params;
