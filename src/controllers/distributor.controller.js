@@ -105,3 +105,42 @@ exports.editDistributor = async (req, res, next) => {
     }
 
 }
+
+
+exports.addDistributor = async (req, res, next) => {
+  try {
+    const {
+      name,
+      phone,
+      email,
+      address,
+      status,
+    } = req.body;
+ 
+    if (!name) {
+      return res.status(400).json({ message: 'Name is required' });
+    }
+ 
+    const [result] = await pool.query(
+      `INSERT INTO distributor
+        (name, phone, email, address, status)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        name,
+        phone || null,
+        email || null,
+        address || null,
+        status || 'Active',
+      ]
+    );
+ 
+    const [newDistributor] = await pool.query(
+      'SELECT * FROM distributor WHERE distributor_id = ?',
+      [result.insertId]
+    );
+ 
+    res.status(201).json(newDistributor[0]);
+  } catch (err) {
+    next(err);
+  }
+};
