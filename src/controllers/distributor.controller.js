@@ -108,39 +108,75 @@ exports.editDistributor = async (req, res, next) => {
 
 
 exports.addDistributor = async (req, res, next) => {
-  try {
-    const {
-      name,
-      phone,
-      email,
-      address,
-      status,
-    } = req.body;
- 
-    if (!name) {
-      return res.status(400).json({ message: 'Name is required' });
-    }
- 
-    const [result] = await pool.query(
-      `INSERT INTO distributor
+    try {
+        const {
+            name,
+            phone,
+            email,
+            address,
+            status,
+        } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ message: 'Name is required' });
+        }
+
+        const [result] = await pool.query(
+            `INSERT INTO distributor
         (name, phone, email, address, status)
        VALUES (?, ?, ?, ?, ?)`,
-      [
-        name,
-        phone || null,
-        email || null,
-        address || null,
-        status || 'Active',
-      ]
-    );
- 
-    const [newDistributor] = await pool.query(
-      'SELECT * FROM distributor WHERE distributor_id = ?',
-      [result.insertId]
-    );
- 
-    res.status(201).json(newDistributor[0]);
-  } catch (err) {
-    next(err);
-  }
+            [
+                name,
+                phone || null,
+                email || null,
+                address || null,
+                status || 'Active',
+            ]
+        );
+
+        const [newDistributor] = await pool.query(
+            'SELECT * FROM distributor WHERE distributor_id = ?',
+            [result.insertId]
+        );
+
+        res.status(201).json(newDistributor[0]);
+    } catch (err) {
+        next(err);
+    }
+};
+
+
+exports.getOrderInfoById = async (req, res, next) => {
+    const { id } = req.params;
+
+    try {
+        const [rows] = await pool.query(
+            `SELECT
+                distributor_id,
+                COALESCE(SUM(total_amount), 0) AS total_purchased_amount,
+                COALESCE(SUM(paid_amount), 0) AS total_paid_amount,
+                COALESCE(SUM(total_amount), 0) - COALESCE(SUM(paid_amount), 0) AS total_due,
+                COUNT(*) AS total_orders
+            FROM distributor_sale
+            WHERE distributor_id = ?
+            GROUP BY distributor_id;`,
+            [id]
+        );
+
+        res.json({
+            success: true,
+            data: rows.length > 0
+                ? rows[0]
+                : {
+                    distributor_id: id,
+                    total_purchased_amount: 0,
+                    total_paid_amount: 0,
+                    total_due: 0,
+                    total_orders: 0
+                }
+        });
+
+    } catch (err) {
+        next(err);
+    }
 };
